@@ -52,6 +52,7 @@ int main(int argc, char ** argv) {
 		// TODO: We need to check whether our inotify event failed, and if so, add a new one on the new PID file or something
 		int i = 0;
 		int len = read(fd, buf, 1024); // This read call blocks, thankfully, otherwise we'd nom way too much CPU...
+		// TODO: This shit totally doesn't block... should fix that
 		while (i < len) {
 			//event = (struct inotify_event *) &buf[i]; // not required because we don't care about the event itself
 			// AW SNAP WE HEAAAAAAA
